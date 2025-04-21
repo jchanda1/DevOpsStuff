@@ -1,0 +1,57 @@
+default:
+  image: node:latest
+
+stages:
+  - install
+  - validate
+  - test
+  - release
+
+cache:
+  key: node_modules-cache-$CI_COMMIT_REF_SLUG
+  paths:
+    - node_modules/
+
+npm_install:
+  stage: install
+  script:
+    - npm install
+
+format:
+  stage: validate
+  script:
+    - echo "Running formatter"
+    - npm run format
+
+lint:
+  stage: validate
+  script:
+    - echo "Running linter..."
+    - npx eslint --format=@gitlab-formatters/gitlab -o code-quality-report.json "./src/**/*.{ts,tsx}" --max-warnings 0 --report-unused-disable-directives || true
+  artifacts:
+    reports:
+      codequality: code-quality-report.json
+
+test:
+  stage: test
+  needs:
+    - npm_install
+    - format
+    - lint
+  script:
+    - npm test -- --reporter=junit --outputFile=junit.xml
+  artifacts:
+    reports:
+      junit: junit.xml
+
+version:
+  stage: release
+  needs:
+    - test
+  variables:
+    GITLAB_TOKEN: $GITLAB_TOKEN
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - npm ci
+    - npm run semantic-release -- --verbose
